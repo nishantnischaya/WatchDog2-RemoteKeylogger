@@ -1,55 +1,43 @@
 import socket
-import hashlib
+import threading 
+import logging
+import signal
+import sys
 from Crypto.Cipher import AES
 
-# AES encryption function
-def encrypt(key, plaintext):
-    cipher = AES.new(key, AES.MODE_EAX)
-    ciphertext, _ = cipher.encrypt_and_digest(plaintext.encode('utf-8'))
-    return ciphertext
+logging.basicConfig(filename="keylog.log", format='%(asctime)s - %(message)s', filemode='w')
+logger = logging.getLogger() 
+logger.setLevel(logging.DEBUG)
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 host = socket.gethostbyname(socket.gethostname())
 port = 5050
 ADDR = (host, port)
 
-client.connect(ADDR)
+user_database = {
+    "user1": "password1",
+    "user2": "password2"
+}
 
-def authenticate():
-    username = input("Username: ")
-    password = input("Password: ")
+def decrypt(key, ciphertext):
+    cipher = AES.new(key, AES.MODE_EAX)
+    plaintext = cipher.decrypt(ciphertext)
+    return plaintext.decode('utf-8')
+
+def authenticate(client):
+    encrypted_username = client.recv(1024)
+    encrypted_password = client.recv(1024)
     
-    # Hash the password before sending
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    
-    # Encrypt the username and hashed password
+    # Decrypt the username and password
     key = b'secret_key_16bit'
-    encrypted_username = encrypt(key, username)
-    encrypted_password = encrypt(key, hashed_password)
+    username = decrypt(key, encrypted_username)
+    password = decrypt(key, encrypted_password)
     
-    # Send encrypted credentials to the server
-    client.sendall(encrypted_username)
-    client.sendall(encrypted_password)
-    
-    response = client.recv(1024).decode('utf-8')
-    print(response)
-    return response.startswith("Authentication successful")
-
-def send_message():
-    while True:
-        message = input("Enter message (or 'exit' to quit): ")
-        if message.lower() == 'exit':
-            break
-        client.sendall(message.encode('utf-8'))
-
-def main():
-    if authenticate():
-        print("Authentication successful. You are now connected to the server.")
-        send_message()
+    if username in user_database and user_database[username] == hashlib.sha256(password.encode()).hexdigest():
+        client.sendall(b"Authentication successful. Welcome!\n")
+        return True
     else:
-        print("Authentication failed. Closing connection.")
-        client.close()
+        client.sendall(b"Invalid username or password. Closing connection.\n")
+        return False
 
-if __name__ == "__main__":
-    main()
+# Remaining code remains unchanged...
