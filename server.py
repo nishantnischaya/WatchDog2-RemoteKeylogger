@@ -1,77 +1,55 @@
 import socket
-import threading 
-import logging
-import signal
-import sys
+import hashlib
+from Crypto.Cipher import AES
 
-logging.basicConfig(filename="keylog.log", format='%(asctime)s - %(message)s', filemode='w')
-logger = logging.getLogger() 
-logger.setLevel(logging.DEBUG)
+# AES encryption function
+def encrypt(key, plaintext):
+    cipher = AES.new(key, AES.MODE_EAX)
+    ciphertext, _ = cipher.encrypt_and_digest(plaintext.encode('utf-8'))
+    return ciphertext
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
 host = socket.gethostbyname(socket.gethostname())
 port = 5050
 ADDR = (host, port)
 
-# Define a simple username/password database
-user_database = {
-    "user1": "password1",
-    "user2": "password2"
-}
+client.connect(ADDR)
 
-def authenticate(client):
-    client.sendall(b"Username: ")
-    username = client.recv(1024).strip().decode("utf-8")
-    client.sendall(b"Password: ")
-    password = client.recv(1024).strip().decode("utf-8")
-    return (username, password)
+def authenticate():
+    username = input("Username: ")
+    password = input("Password: ")
+    
+    # Hash the password before sending
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    
+    # Encrypt the username and hashed password
+    key = b'secret_key_16bit'
+    encrypted_username = encrypt(key, username)
+    encrypted_password = encrypt(key, hashed_password)
+    
+    # Send encrypted credentials to the server
+    client.sendall(encrypted_username)
+    client.sendall(encrypted_password)
+    
+    response = client.recv(1024).decode('utf-8')
+    print(response)
+    return response.startswith("Authentication successful")
 
-def write_log(client, address, message, error=False):
-    logging_data = f'{client} - {address} - {message}'
-    if error:
-        logger.error(logging_data)
+def send_message():
+    while True:
+        message = input("Enter message (or 'exit' to quit): ")
+        if message.lower() == 'exit':
+            break
+        client.sendall(message.encode('utf-8'))
+
+def main():
+    if authenticate():
+        print("Authentication successful. You are now connected to the server.")
+        send_message()
     else:
-        logger.info(logging_data)
-
-def handler(client, address):
-    # Authenticate the client
-    username, password = authenticate(client)
-    if username in user_database and user_database[username] == password:
-        client.sendall(b"Authentication successful. Welcome!\n")
-        write_log(client, address, 'Connection Established!', error=False)
-        while True:
-            try:
-                message = client.recv(2048).decode('utf-8')
-                if not message:  # If message is empty, the client has disconnected
-                    write_log(client, address, 'Disconnected!', error=False)
-                    client.close()
-                    break
-                else:
-                    write_log(client, address, message, error=False)
-            except Exception as e:  # Catch specific exceptions for better error handling
-                write_log(client, address, f'Error: {str(e)}', error=True)
-                client.close()
-                break
-    else:
-        client.sendall(b"Invalid username or password. Closing connection.\n")
-        write_log(client, address, 'Authentication failed. Closing connection.', error=True)
+        print("Authentication failed. Closing connection.")
         client.close()
 
-def receive():
-    while True:
-        client, address = server.accept()
-        write_log(client, address, 'Connection Established!', error=False)
-        thread = threading.Thread(target=handler, args=(client, address))
-        thread.start()
-
-def shutdown(sig, frame):
-    print("Shutting down server...")
-    server.close()
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, shutdown)
-
-server.bind(ADDR)
-server.listen()
-
-receive()
+if __name__ == "__main__":
+    main()
